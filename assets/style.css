@@ -1,0 +1,243 @@
+:root {
+    --bg-color: #0f111a;
+    --sidebar-bg: rgba(26, 29, 46, 0.8);
+    --card-bg: rgba(30, 34, 54, 0.6);
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --accent-color: #58a6ff;
+    --accent-glow: rgba(88, 166, 255, 0.3);
+    --border-color: rgba(48, 54, 61, 0.5);
+    --success-color: #238636;
+    --error-color: #da3633;
+    --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    font-family: var(--font-family);
+    margin: 0;
+    overflow-x: hidden;
+}
+
+/* Glassmorphism Sidebar */
+.sidebar {
+    background: var(--sidebar-bg);
+    backdrop-filter: blur(12px);
+    border-right: 1px solid var(--border-color);
+    height: 100vh;
+    padding: 2rem 1rem;
+    position: fixed;
+    width: 280px;
+    z-index: 1000;
+    transition: all 0.3s ease;
+}
+
+.sidebar-title {
+    font-size: 1.5rem;
+    font-weight: 800;
+    margin-bottom: 2rem;
+    background: linear-gradient(135deg, #fff 0%, var(--accent-color) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.5px;
+}
+
+.nav-link {
+    color: var(--text-secondary);
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.nav-link:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+}
+
+.nav-link.active {
+    background: var(--accent-glow);
+    color: var(--accent-color);
+    border-left: 3px solid var(--accent-color);
+}
+
+/* Main Content area */
+.main-content {
+    margin-left: 280px;
+    padding: 2rem;
+    min-height: 100vh;
+}
+
+/* Premium Cards */
+.glass-card {
+    background: var(--card-bg);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    margin-bottom: 1.5rem;
+}
+
+/* Chat Bubbles */
+.chat-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-width: 900px;
+    margin: 0 auto;
+    padding-bottom: 100px;
+}
+
+.bubble {
+    padding: 1rem 1.5rem;
+    border-radius: 12px;
+    max-width: 80%;
+    line-height: 1.6;
+}
+
+.bubble-user {
+    background: var(--accent-color);
+    color: #fff;
+    align-self: flex-end;
+    border-bottom-right-radius: 4px;
+}
+
+.bubble-ai {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    align-self: flex-start;
+    border-bottom-left-radius: 4px;
+}
+
+.reasoning-block {
+    font-family: 'Fira Code', monospace;
+    font-size: 0.85rem;
+    color: #d2a8ff;
+    background: rgba(110, 118, 129, 0.1);
+    padding: 0.75rem;
+    border-radius: 8px;
+    margin-top: 0.5rem;
+    border-left: 2px solid #d2a8ff;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-color);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+}
+
+/* Inputs & Buttons */
+.custom-input {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    padding: 0.75rem 1rem;
+    width: 100%;
+}
+
+.custom-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.custom-button {
+    background: var(--accent-color);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 0.75rem 1.5rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.custom-button:hover {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+}
+
+/* Wiki Markdown Styling */
+.wiki-markdown-body {
+    line-height: 1.7;
+    font-size: 1.05rem;
+    color: var(--text-primary);
+}
+
+.wiki-markdown-body h1, .wiki-markdown-body h2, .wiki-markdown-body h3 {
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+    color: var(--accent-color);
+}
+
+.wiki-markdown-body code {
+    background: rgba(110, 118, 129, 0.2);
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    font-family: 'Fira Code', monospace;
+}
+
+.wiki-markdown-body pre {
+    background: #0d1117;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    overflow-x: auto;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+    animation: fadeIn 0.4s ease forwards;
+}
+
+@keyframes pulse {
+    0% { border-color: rgba(210, 168, 255, 0.3); box-shadow: 0 0 0 0 rgba(210, 168, 255, 0.1); }
+    50% { border-color: rgba(210, 168, 255, 0.8); box-shadow: 0 0 10px 0 rgba(210, 168, 255, 0.2); }
+    100% { border-color: rgba(210, 168, 255, 0.3); box-shadow: 0 0 0 0 rgba(210, 168, 255, 0.1); }
+}
+
+.reasoning-block {
+    animation: pulse 2s infinite ease-in-out;
+    transition: all 0.3s ease;
+}
+
+/* Responsive adjustments */
+@media (max-width: 992px) {
+    .sidebar {
+        width: 80px;
+        padding: 2rem 0.5rem;
+    }
+    .sidebar .text-truncate, .sidebar small, .sidebar .sidebar-title {
+        display: none;
+    }
+    .main-content {
+        margin-left: 80px;
+    }
+    .fixed-bottom {
+        left: 80px !important;
+    }
+}
