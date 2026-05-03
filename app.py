@@ -8,10 +8,11 @@ import dash_bootstrap_components as dbc
 from dash_iconify import DashIconify
 import markdown
 import bleach
+from dotenv import load_dotenv
 
 # OpenKB imports
 from openkb.config import load_config, save_config, DEFAULT_CONFIG
-from openkb.cli import _find_kb_dir, add_single_file
+from openkb.cli import _find_kb_dir, add_single_file, _setup_llm_key
 from openkb.agent.chat_session import ChatSession, list_sessions, load_session, resolve_session_id
 from openkb.agent.query import build_query_agent, MAX_TURNS
 from agents import Runner, RunItemStreamEvent
@@ -23,6 +24,8 @@ from dash import DiskcacheManager
 KB_DIR = _find_kb_dir() or Path.cwd()
 WIKI_DIR = KB_DIR / "wiki"
 OPENKB_DIR = KB_DIR / ".openkb"
+load_dotenv(KB_DIR / ".env")
+_setup_llm_key(KB_DIR)
 CACHE_DIR = OPENKB_DIR / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -74,26 +77,36 @@ app.layout = html.Div([
     dcc.Store(id='current-session-id', storage_type='session'),
     dcc.Store(id='session-update-trigger', data=0),
     get_sidebar(),
-    html.Div(id='page-content', className="main-content"),
+    html.Div([
+        html.Div(id='page-content'),
+        html.Div(id='chat-history', className="chat-container fade-in", style={"display": "none"}),
+        html.Div(id='chat-loading-out', className="chat-container pb-0", style={"display": "none"}),
+    ], id='main-container', className="main-content"),
+    html.Div([
+        dbc.Input(id='chat-input', placeholder="Ask anything...", className="custom-input", autocomplete="off"),
+        dbc.Button(DashIconify(icon="mdi:send", width=24), id='chat-send', className="custom-button ms-2")
+    ], id='chat-input-container', className="fixed-bottom p-4 bg-dark d-flex align-items-center", style={"left": "280px", "borderTop": "1px solid var(--border-color)", "display": "none"}),
     html.Div(id='notifications-container', style={"position": "fixed", "top": 20, "right": 20, "zIndex": 9999})
 ])
 
 # --- Views ---
 
 def view_chat(session_id=None):
-    return html.Div([
-        html.Div(id='chat-history', className="chat-container fade-in"),
-        html.Div(id='chat-loading-out', className="chat-container pb-0"),
-        html.Div([
-            dbc.Input(id='chat-input', placeholder="Ask anything...", className="custom-input", autocomplete="off"),
-            dbc.Button(DashIconify(icon="mdi:send", width=24), id='chat-send', className="custom-button ms-2")
-        ], className="fixed-bottom p-4 bg-dark d-flex align-items-center", style={"left": "280px", "borderTop": "1px solid var(--border-color)"}),
-    ])
+    return html.Div([]) # Page content is empty because history is global
 
 def view_wiki():
     summaries = sorted((WIKI_DIR / "summaries").glob("*.md")) if (WIKI_DIR / "summaries").exists() else []
     concepts = sorted((WIKI_DIR / "concepts").glob("*.md")) if (WIKI_DIR / "concepts").exists() else []
     
+    if not summaries and not concepts:
+        return html.Div([
+            html.H2("Wiki Browser", className="mb-4"),
+            html.Div([
+                html.P("No documents or concepts found in the wiki.", className="text-muted"),
+                dcc.Link(dbc.Button("Add Sources", className="custom-button"), href="/add")
+            ], className="glass-card text-center py-5")
+        ], className="fade-in")
+
     return html.Div([
         html.H2("Wiki Browser", className="mb-4"),
         dbc.Row([
@@ -124,7 +137,7 @@ def view_add():
             html.P("Enter a file or directory path to add to your knowledge base.", className="text-secondary"),
             dbc.Input(id='add-path-input', placeholder="/path/to/documents", className="custom-input mb-3"),
             dbc.Button([
-                dbc.Spinner(size="sm", id="add-spinner", className="me-2", spinner_style={"display": "none"}),
+                dbc.Spinner(size="sm", id="add-spinner", spinner_style={"display": "none"}, spinner_class_name="me-2"),
                 "Process Documents"
             ], id='add-process-btn', className="custom-button"),
             html.Div(id='add-output', className="mt-4 p-3 bg-black text-success font-monospace", 
@@ -160,19 +173,30 @@ def view_settings():
 
 # --- Callbacks ---
 
-@app.callback(Output('page-content', 'children'), Input('url', 'pathname'))
+@app.callback(
+    Output('page-content', 'children'),
+    Output('chat-history', 'style'),
+    Output('chat-loading-out', 'style'),
+    Output('chat-input-container', 'style'),
+    Input('url', 'pathname')
+)
 def display_page(pathname):
+    hide_style = {"display": "none"}
+    chat_container_style = {"display": "flex"} # chat-container is flex by default in CSS
+    chat_input_style = {"left": "280px", "borderTop": "1px solid var(--border-color)", "display": "flex"}
+    
     if pathname == '/wiki':
-        return view_wiki()
+        return view_wiki(), hide_style, hide_style, hide_style
     elif pathname == '/add':
-        return view_add()
+        return view_add(), hide_style, hide_style, hide_style
     elif pathname == '/settings':
-        return view_settings()
-    elif pathname and pathname.startswith('/chat/'):
-        session_id = pathname.split('/')[-1]
-        return view_chat(session_id)
+        return view_settings(), hide_style, hide_style, hide_style
+    elif pathname and (pathname == '/chat' or pathname.startswith('/chat/')):
+        session_id = pathname.split('/')[-1] if pathname.startswith('/chat/') else None
+        return view_chat(session_id), chat_container_style, chat_container_style, chat_input_style
     else:
-        return view_chat()
+        # Default to chat
+        return view_chat(), chat_container_style, chat_container_style, chat_input_style
 
 @app.callback(
     Output('wiki-content', 'children'),
@@ -183,11 +207,14 @@ def display_page(pathname):
     prevent_initial_call=True
 )
 def show_wiki_item(n_clicks, ids):
+    if not any(n_clicks):
+        return dash.no_update, dash.no_update, dash.no_update
+    
     ctx = callback_context
     if not ctx.triggered:
         return dash.no_update, dash.no_update, dash.no_update
     
-    triggered_id = json.loads(ctx.triggered[0]['prop_id'].split('.')[0])
+    triggered_id = dash.ctx.triggered_id
     selected_path = triggered_id['path']
     
     with open(selected_path, 'r', encoding='utf-8') as f:
@@ -261,8 +288,27 @@ def save_settings(n_clicks, model, api_key):
     
     if api_key:
         env_path = KB_DIR / ".env"
-        with open(env_path, 'a', encoding='utf-8') as f:
-            f.write(f"\nLLM_API_KEY={api_key}\n")
+        lines = []
+        if env_path.exists():
+            with open(env_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+        
+        # Replace or append LLM_API_KEY
+        found = False
+        for i, line in enumerate(lines):
+            if line.strip().startswith("LLM_API_KEY="):
+                lines[i] = f"LLM_API_KEY={api_key}\n"
+                found = True
+                break
+        if not found:
+            lines.append(f"LLM_API_KEY={api_key}\n")
+            
+        with open(env_path, 'w', encoding='utf-8') as f:
+            f.writelines(lines)
+            
+        # Immediate propagation
+        os.environ["LLM_API_KEY"] = api_key
+        _setup_llm_key(KB_DIR)
             
     return True
     
@@ -279,7 +325,7 @@ def toggle_settings_toast(status):
 # --- Chat Implementation ---
 
 @app.callback(
-    Output('chat-history', 'children'),
+    Output('chat-history', 'children', allow_duplicate=True),
     Output('chat-input', 'value'),
     Output('current-session-id', 'data'),
     Output('session-update-trigger', 'data'),
@@ -309,6 +355,9 @@ def handle_chat(set_progress, n_clicks, n_submit, pathname, message, session_id,
     model = config.get('model', DEFAULT_CONFIG['model'])
     language = config.get('language', 'en')
     
+    # Ensure keys are loaded in background process
+    _setup_llm_key(KB_DIR)
+    
     is_new_session = False
     if not session_id:
         session = ChatSession.new(KB_DIR, model, language)
@@ -325,7 +374,7 @@ def handle_chat(set_progress, n_clicks, n_submit, pathname, message, session_id,
     
     history.append(html.Div(message, className="bubble bubble-user fade-in"))
     set_progress((history, html.Div([
-        dbc.Spinner(size="sm", color="primary", className="me-2"),
+        dbc.Spinner(size="sm", color="primary", spinner_class_name="me-2"),
         "Initializing agent..."
     ], className="text-muted small ms-4 mb-2")))
 
@@ -417,4 +466,4 @@ def load_chat_on_navigation(pathname, current_session_id):
     return dash.no_update, dash.no_update
 
 if __name__ == '__main__':
-    app.run(debug=True, port=8050)
+    app.run(debug=True, port=8051)
