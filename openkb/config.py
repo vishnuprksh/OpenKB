@@ -6,7 +6,7 @@ from typing import Any
 import yaml
 
 DEFAULT_CONFIG: dict[str, Any] = {
-    "model": "gpt-5.4-mini",
+    "model": "openrouter/z-ai/glm-4.5-air:free",
     "language": "en",
     "pageindex_threshold": 20,
 }

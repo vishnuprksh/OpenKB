@@ -6,8 +6,6 @@ import dash
 from dash import dcc, html, Input, Output, State, ALL, callback_context
 import dash_bootstrap_components as dbc
 from dash_iconify import DashIconify
-import markdown
-import bleach
 from dotenv import load_dotenv
 
 # OpenKB imports
@@ -85,7 +83,8 @@ app.layout = html.Div([
     html.Div([
         dbc.Input(id='chat-input', placeholder="Ask anything...", className="custom-input", autocomplete="off"),
         dbc.Button(DashIconify(icon="mdi:send", width=24), id='chat-send', className="custom-button ms-2")
-    ], id='chat-input-container', className="fixed-bottom p-4 bg-dark d-flex align-items-center", style={"left": "280px", "borderTop": "1px solid var(--border-color)", "display": "none"}),
+    ], id='chat-input-container', className="fixed-bottom p-4 bg-dark", style={"left": "280px", "borderTop": "1px solid var(--border-color)", "display": "none", "alignItems": "center"}),
+
     html.Div(id='notifications-container', style={"position": "fixed", "top": 20, "right": 20, "zIndex": 9999})
 ])
 
@@ -145,18 +144,69 @@ def view_add():
         ], className="glass-card")
     ], className="fade-in")
 
+PROVIDER_PRESETS = {
+    "openrouter": {
+        "label": "OpenRouter",
+        "model_prefix": "openrouter/",
+        "key_env": "OPENROUTER_API_KEY",
+        "placeholder": "sk-or-v1-...",
+        "default_model": "openrouter/z-ai/glm-4.5-air:free",
+    },
+    "openai": {
+        "label": "OpenAI",
+        "model_prefix": "",
+        "key_env": "OPENAI_API_KEY",
+        "placeholder": "sk-...",
+        "default_model": "gpt-4o-mini",
+    },
+    "anthropic": {
+        "label": "Anthropic",
+        "model_prefix": "anthropic/",
+        "key_env": "ANTHROPIC_API_KEY",
+        "placeholder": "sk-ant-...",
+        "default_model": "anthropic/claude-3-haiku",
+    },
+    "gemini": {
+        "label": "Google Gemini",
+        "model_prefix": "gemini/",
+        "key_env": "GEMINI_API_KEY",
+        "placeholder": "AIza...",
+        "default_model": "gemini/gemini-1.5-flash",
+    },
+}
+
 def view_settings():
     config = load_config(OPENKB_DIR / "config.yaml")
+    current_model = config.get('model', DEFAULT_CONFIG['model'])
+    
+    # Detect current provider from model string
+    current_provider = "openrouter"
+    for pid, preset in PROVIDER_PRESETS.items():
+        if preset["model_prefix"] and current_model.startswith(preset["model_prefix"]):
+            current_provider = pid
+            break
+    
+    provider_options = [{"label": v["label"], "value": k} for k, v in PROVIDER_PRESETS.items()]
+    current_placeholder = PROVIDER_PRESETS[current_provider]["placeholder"]
+    
     return html.Div([
         html.H2("Settings", className="mb-4"),
         html.Div([
-            html.Label("LLM Model (LiteLLM format)", className="mb-2"),
-            dbc.Input(id='settings-model', value=config.get('model', DEFAULT_CONFIG['model']), className="custom-input mb-4"),
+            html.Label("Provider", className="mb-2"),
+            dbc.Select(
+                id='settings-provider',
+                options=provider_options,
+                value=current_provider,
+                className="custom-input mb-3",
+            ),
+            html.Label("Model (LiteLLM format)", className="mb-2"),
+            dbc.Input(id='settings-model', value=current_model, className="custom-input mb-4"),
             
-            html.Label("LLM API Key (saved to .env)", className="mb-2"),
-            dbc.Input(id='settings-api-key', type="password", placeholder="Enter key to update...", className="custom-input mb-4"),
+            html.Label("API Key (saved to .env)", className="mb-2"),
+            dbc.Input(id='settings-api-key', type="password", placeholder=current_placeholder, className="custom-input mb-1"),
+            html.Small(id='settings-key-hint', className="text-muted mb-4 d-block"),
             
-            dbc.Button("Save Settings", id='settings-save-btn', className="custom-button")
+            dbc.Button("Save Settings", id='settings-save-btn', className="custom-button mt-3")
         ], className="glass-card", style={"maxWidth": "600px"}),
         dbc.Toast(
             "Settings saved successfully!",
@@ -183,7 +233,7 @@ def view_settings():
 def display_page(pathname):
     hide_style = {"display": "none"}
     chat_container_style = {"display": "flex"} # chat-container is flex by default in CSS
-    chat_input_style = {"left": "280px", "borderTop": "1px solid var(--border-color)", "display": "flex"}
+    chat_input_style = {"left": "280px", "borderTop": "1px solid var(--border-color)", "display": "flex", "alignItems": "center"}
     
     if pathname == '/wiki':
         return view_wiki(), hide_style, hide_style, hide_style
@@ -275,39 +325,58 @@ def process_add(set_progress, n_clicks, path):
     return "".join(output_log)
 
 @app.callback(
+    Output('settings-model', 'value'),
+    Output('settings-api-key', 'placeholder'),
+    Output('settings-key-hint', 'children'),
+    Input('settings-provider', 'value'),
+    prevent_initial_call=True
+)
+def update_provider_fields(provider):
+    preset = PROVIDER_PRESETS.get(provider, PROVIDER_PRESETS["openrouter"])
+    hint = f"Saved as {preset['key_env']} in .env"
+    return preset["default_model"], preset["placeholder"], hint
+
+@app.callback(
     Output('settings-status', 'children'),
     Input('settings-save-btn', 'n_clicks'),
     State('settings-model', 'value'),
     State('settings-api-key', 'value'),
+    State('settings-provider', 'value'),
     prevent_initial_call=True
 )
-def save_settings(n_clicks, model, api_key):
+def save_settings(n_clicks, model, api_key, provider):
     config = load_config(OPENKB_DIR / "config.yaml")
     config['model'] = model
     save_config(OPENKB_DIR / "config.yaml", config)
     
     if api_key:
+        preset = PROVIDER_PRESETS.get(provider, PROVIDER_PRESETS["openrouter"])
+        key_env = preset["key_env"]
+        
         env_path = KB_DIR / ".env"
         lines = []
         if env_path.exists():
             with open(env_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
         
-        # Replace or append LLM_API_KEY
-        found = False
-        for i, line in enumerate(lines):
-            if line.strip().startswith("LLM_API_KEY="):
-                lines[i] = f"LLM_API_KEY={api_key}\n"
-                found = True
-                break
-        if not found:
-            lines.append(f"LLM_API_KEY={api_key}\n")
+        # Replace or append both LLM_API_KEY and the provider-specific key
+        keys_to_set = {"LLM_API_KEY": api_key, key_env: api_key}
+        for key_name, key_val in keys_to_set.items():
+            found = False
+            for i, line in enumerate(lines):
+                if line.strip().startswith(f"{key_name}="):
+                    lines[i] = f"{key_name}={key_val}\n"
+                    found = True
+                    break
+            if not found:
+                lines.append(f"{key_name}={key_val}\n")
             
         with open(env_path, 'w', encoding='utf-8') as f:
             f.writelines(lines)
             
         # Immediate propagation
         os.environ["LLM_API_KEY"] = api_key
+        os.environ[key_env] = api_key
         _setup_llm_key(KB_DIR)
             
     return True
@@ -331,7 +400,7 @@ def toggle_settings_toast(status):
     Output('session-update-trigger', 'data'),
     Input('chat-send', 'n_clicks'),
     Input('chat-input', 'n_submit'),
-    Input('url', 'pathname'),
+    State('url', 'pathname'),
     State('chat-input', 'value'),
     State('current-session-id', 'data'),
     State('session-update-trigger', 'data'),
@@ -387,21 +456,30 @@ def handle_chat(set_progress, n_clicks, n_submit, pathname, message, session_id,
     
     async def run_agent_stream():
         nonlocal response_text
-        run_result = Runner.run_streamed(agent, message, max_turns=MAX_TURNS)
-        async for event in run_result.stream_events():
-            if isinstance(event, RunItemStreamEvent):
-                item = event.item
-                if item.type == "tool_call_item":
-                    raw_item = item.raw_item
-                    name = getattr(raw_item, "name", "?")
-                    args = getattr(raw_item, "arguments", {})
-                    reasoning_steps.append(html.Div([
-                        DashIconify(icon="mdi:cog", className="me-1"),
-                        f"Thinking: {name}({json.dumps(args)})"
-                    ], className="reasoning-block fade-in"))
-                    set_progress((history, html.Div(reasoning_steps, className="ms-4 mb-2")))
-        
-        response_text = run_result.final_output
+        try:
+            run_result = Runner.run_streamed(agent, message, max_turns=MAX_TURNS)
+            async for event in run_result.stream_events():
+                if isinstance(event, RunItemStreamEvent):
+                    item = event.item
+                    if item.type == "tool_call_item":
+                        raw_item = item.raw_item
+                        name = getattr(raw_item, "name", "?")
+                        args = getattr(raw_item, "arguments", {})
+                        reasoning_steps.append(html.Div([
+                            DashIconify(icon="mdi:cog", className="me-1"),
+                            f"Thinking: {name}({json.dumps(args)})"
+                        ], className="reasoning-block fade-in"))
+                        set_progress((history, html.Div(reasoning_steps, className="ms-4 mb-2")))
+            response_text = run_result.final_output or ""
+        except Exception as e:
+            err_str = str(e)
+            if "RateLimitError" in type(e).__name__ or "rate" in err_str.lower():
+                response_text = (
+                    "**Rate limit reached** — the model provider is temporarily limiting requests. "
+                    "Please wait a moment and try again, or switch to a different model in Settings."
+                )
+            else:
+                response_text = f"**Error:** {err_str}"
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -415,7 +493,10 @@ def handle_chat(set_progress, n_clicks, n_submit, pathname, message, session_id,
     for u, a in zip(session.user_turns, session.assistant_texts):
         final_history.append(html.Div(u, className="bubble bubble-user fade-in"))
         final_history.append(html.Div(dcc.Markdown(a), className="bubble bubble-ai fade-in"))
-    
+
+    # Clear the loading indicator now that the response is complete
+    set_progress((final_history, ""))
+
     return final_history, "", session_id, trigger_count + 1 if is_new_session else trigger_count
 
 @app.callback(
